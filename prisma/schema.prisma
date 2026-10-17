@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+enum HazardCode {
+  A
+  AA
+}
+enum ChecklistResult {
+  BAIK
+  RUSAK
+  PERBAIKI
+}
+enum FindingStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_PART
+  CLOSED
+}
+enum UserRole {
+  TECHNICIAN
+  SUPERVISOR
+  ADMIN
+}
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+enum OperationalStatus {
+  UNASSESSED
+  OPERABLE
+  RESTRICTED
+  NOT_OPERABLE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  username     String   @unique
+  passwordHash String
+  role         UserRole
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  inspections  Inspection[] @relation("InspectionTechnician")
+  reviewed     Inspection[] @relation("InspectionReviewer")
+  siteAssignments UserSite[]
+}
+
+model Site {
+  id        String      @id @default(cuid())
+  code      String      @unique
+  name      String      @unique
+  generators Generator[]
+  userAssignments UserSite[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+model Generator {
+  id          String       @id @default(cuid())
+  assetCode   String       @unique
+  siteId      String
+  site        Site         @relation(fields: [siteId], references: [id])
+  model       String?
+  unitName    String?
+  isEligible  Boolean      @default(true)
+  operationalStatus OperationalStatus @default(UNASSESSED)
+  operationalStatusNote String?
+  operationalStatusUpdatedAt DateTime?
+  operationalStatusUpdatedBy String?
+  statusLogs GeneratorStatusLog[]
+  inspections Inspection[]
+  findings    Finding[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  @@index([siteId])
+}
+model Inspection {
+  id             String         @id @default(cuid())
+  inspector      String
+  inspectorId    String?
+  technician     User?          @relation("InspectionTechnician", fields: [inspectorId], references: [id], onDelete: SetNull)
+  inspectionDate DateTime       @db.Date
+  shift          String
+  siteId         String
+  generatorId    String
+  generator      Generator      @relation(fields: [generatorId], references: [id])
+  hmStart        Float?
+  hmEnd          Float?
+  radiatorEmpty  Float?
+  radiatorLoaded Float?
+  oilEmpty       Float?
+  oilLoaded      Float?
+  rpmEmpty       Float?
+  rpmLoaded      Float?
+  loadEmpty      Float?
+  loadLoaded     Float?
+  voltageEmpty   Float?
+  voltageLoaded  Float?
+  batteryEmpty   Float?
+  batteryLoaded  Float?
+  notes          String?
+  signatureName  String?
+  approvalStatus ApprovalStatus @default(PENDING)
+  reviewerId     String?
+  reviewer       User?          @relation("InspectionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewedAt     DateTime?
+  reviewNotes    String?
+  items          InspectionItem[]
+  findings       Finding[]
+  createdAt      DateTime       @default(now())
+  @@index([inspectionDate, shift])
+  @@index([siteId, inspectionDate])
+  @@index([generatorId, inspectionDate])
+  @@index([approvalStatus, inspectionDate])
+}
+model InspectionItem {
+  id           String          @id @default(cuid())
+  inspectionId String
+  inspection   Inspection      @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  itemCode     String
+  category     String
+  description  String
+  hazard       HazardCode
+  result       ChecklistResult
+  notes        String?
+  createdAt    DateTime        @default(now())
+  @@unique([inspectionId, itemCode])
+  @@index([itemCode])
+}
+model Finding {
+  id               String        @id @default(cuid())
+  inspectionId     String?
+  inspection       Inspection?   @relation(fields: [inspectionId], references: [id], onDelete: SetNull)
+  generatorId      String
+  generator        Generator     @relation(fields: [generatorId], references: [id])
+  title            String
+  description      String
+  severity         HazardCode
+  status           FindingStatus @default(OPEN)
+  reporter         String
+  assignedTo       String?
+  deadline         DateTime?
+  correctiveAction String?
+  closureNotes     String?
+  closedAt         DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  @@index([status, severity])
+  @@index([generatorId, createdAt])
+  @@index([deadline])
+}
+
+model UserSite {
+  id        String   @id @default(cuid())
+  userId    String
+  siteId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([userId, siteId])
+  @@index([siteId])
+}
+
+model GeneratorStatusLog {
+  id             String            @id @default(cuid())
+  generatorId    String
+  generator      Generator         @relation(fields: [generatorId], references: [id], onDelete: Cascade)
+  previousStatus OperationalStatus
+  newStatus      OperationalStatus
+  note           String?
+  changedBy      String
+  changedAt      DateTime          @default(now())
+  @@index([generatorId, changedAt])
+}
